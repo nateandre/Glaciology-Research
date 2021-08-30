@@ -71,7 +71,7 @@ def plot_single_mat_hist(mat,title="Combined",f1=7,f2=4):
     plt.show()
     
 
-def standard_model_validation(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/"):
+def standard_model_validation(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/",h_dim=100,use_max_pool=False):
     """ Returns model performance for standard NN
     """
     _,test_data,_ = gather_data(test_year,season,pad_len,data_dir)
@@ -86,6 +86,10 @@ def standard_model_validation(test_year,season,model_dir,pad_len=24,output_dir="
         test_last_mask = np.expand_dims(test_last_neigh_mask[test_i],0)
         test_y = test_mb[test_i]
         site_i = test_sites[test_i]
+
+        if use_max_pool:
+            test_mask = np.stack([np.squeeze(test_mask) for _ in range(h_dim)],axis=-1)
+            test_last_mask = np.stack([np.squeeze(test_last_mask) for _ in range(h_dim)],axis=-1)
         
         site_model = tf.keras.models.load_model(output_dir+model_dir+"/"+site_i)
         test_pred = site_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask])
@@ -94,27 +98,28 @@ def standard_model_validation(test_year,season,model_dir,pad_len=24,output_dir="
     return math.sqrt(sum(resids)/len(resids))
 
 
-def standard_model_gp_validation(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/"):
-    """ Returns model performance for standard NN
+def standard_model_validation_time(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/",model_type="time",h_dim=100,use_max_pool=False):
+    """ Returns model performance for time-series NN
     """
-    _,test_data,_ = gather_data(test_year,season,pad_len,data_dir)
+    _,test_data,_ = gather_data(test_year,season,pad_len,data_dir,model_type=model_type)
     test_mb,test_features,test_neigh_features,test_last_neigh_features,test_sites,test_neigh_mask,test_last_neigh_mask,_ = test_data
 
-    resids = []
-    for test_i in range(0,len(test_sites)):    
-        test_x = np.expand_dims(test_features[test_i],0)
-        test_neigh_x = np.expand_dims(test_neigh_features[test_i],0)
-        test_last_neigh_x = np.expand_dims(test_last_neigh_features[test_i],0)
-        test_mask = np.expand_dims(test_neigh_mask[test_i],0)
-        test_last_mask = np.expand_dims(test_last_neigh_mask[test_i],0)
-        test_y = test_mb[test_i]
-        site_i = test_sites[test_i]
-        
-        site_model = tf.keras.models.load_model(output_dir+model_dir+"/"+site_i)
-        test_pred = site_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask])
-        resids.append((test_y-float(test_pred))**2)
-        
-    return math.sqrt(sum(resids)/len(resids))
+    test_x = test_features
+    test_neigh_x = test_neigh_features
+    test_last_neigh_x = test_last_neigh_features
+    test_mask = test_neigh_mask
+    test_last_mask = test_last_neigh_mask
+    test_y = test_mb
+
+    if use_max_pool:
+        test_mask = np.stack([np.squeeze(test_mask) for _ in range(h_dim)],axis=-1)
+        test_last_mask = np.stack([np.squeeze(test_last_mask) for _ in range(h_dim)],axis=-1)
+
+    site_model = tf.keras.models.load_model(output_dir+model_dir)
+    test_pred = site_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask])
+    test_sr = mean_squared_error(test_y,test_pred)
+
+    return math.sqrt(test_sr)
 
 
 def standard_model_gp_validation(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/"):
@@ -148,26 +153,6 @@ def standard_model_gp_validation(test_year,season,model_dir,pad_len=24,output_di
         gp_vars.append(gp_var)
         
     return math.sqrt(sum(resids)/len(resids)),sum(gp_vars)/len(gp_vars)
-
-
-def standard_model_validation_time(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/",model_type="time"):
-    """ Returns model performance for time-series NN
-    """
-    _,test_data,_ = gather_data(test_year,season,pad_len,data_dir,model_type=model_type)
-    test_mb,test_features,test_neigh_features,test_last_neigh_features,test_sites,test_neigh_mask,test_last_neigh_mask,_ = test_data
-
-    test_x = test_features
-    test_neigh_x = test_neigh_features
-    test_last_neigh_x = test_last_neigh_features
-    test_mask = test_neigh_mask
-    test_last_mask = test_last_neigh_mask
-    test_y = test_mb
-
-    site_model = tf.keras.models.load_model(output_dir+model_dir)
-    test_pred = site_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask])
-    test_sr = mean_squared_error(test_y,test_pred)
-
-    return math.sqrt(test_sr)
 
 
 def standard_model_gp_validation_time(test_year,season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/",model_type="time"):

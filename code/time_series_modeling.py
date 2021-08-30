@@ -11,26 +11,28 @@ from sklearn.metrics import mean_squared_error
 from nn_modeling_utils import compile_model
 from data_utils import gather_data
 
+
 def main():
     test_year = 2014
-    season = "winter"  # summer/winter
-    model_dir = "graph_modeling_3_t_w_2_2014_time"
+    season = "summer"  # summer/winter
+    model_dir = "graph_modeling_s_2014_time_mp"
     pad_len=24
-    run_simulation(test_year,season,model_dir,pad_len)
+    print(test_year,season)
+    run_simulation(test_year,season,model_dir,pad_len,use_max_pool=True)
 
 
-def run_simulation(test_year,season,model_dir,pad_len=24,data_dir="../data/",output_dir="../model_output/"):
+def run_simulation(test_year,season,model_dir,pad_len=24,data_dir="../data/",output_dir="../model_output/",use_max_pool=False):
     """ Trains the model
     """
     train_data,test_data,years = gather_data(test_year,season,pad_len,data_dir,model_type="time")
-    this_test_sr,site_saved_models = train_model(train_data,test_data,years,test_year,model_dir,pad_len,output_dir=output_dir)
+    this_test_sr,site_saved_models = train_model(train_data,test_data,years,test_year,model_dir,pad_len,use_max_pool=use_max_pool,output_dir=output_dir)
     # Model averages over inits
     print("Avg:",math.sqrt(round(sum(this_test_sr)/len(this_test_sr),4)))
     # Indiv model performance
     print("Ind:",site_saved_models[1])
 
 
-def train_model(train_data,test_data,years,test_year,model_dir,pad_len,epochs=100,num_inits=5,n_val=30,batch_size=25,output_dir="../model_output/"):
+def train_model(train_data,test_data,years,test_year,model_dir,pad_len,epochs=100,num_inits=5,n_val=30,batch_size=25,h_dim=100,use_max_pool=False,output_dir="../model_output/"):
     """ Used to train the deep learning model
     args:
         model_dir (str): specifies directory name for storing this model
@@ -38,6 +40,12 @@ def train_model(train_data,test_data,years,test_year,model_dir,pad_len,epochs=10
     """
     train_mb,train_features,train_neigh_features,train_last_neigh_features,train_sites,train_neigh_mask,train_last_neigh_mask,_ = train_data
     test_mb,test_features,test_neigh_features,test_last_neigh_features,test_sites,test_neigh_mask,test_last_neigh_mask,_ = test_data
+
+    if use_max_pool:
+        train_neigh_mask = np.stack([np.squeeze(train_neigh_mask) for _ in range(h_dim)],axis=-1)
+        train_last_neigh_mask = np.stack([np.squeeze(train_last_neigh_mask) for _ in range(h_dim)],axis=-1)
+        test_neigh_mask = np.stack([np.squeeze(test_neigh_mask) for _ in range(h_dim)],axis=-1)
+        test_last_neigh_mask = np.stack([np.squeeze(test_last_neigh_mask) for _ in range(h_dim)],axis=-1)
 
     # getting training, validation, and testing data:
     train_x = train_features
@@ -69,7 +77,7 @@ def train_model(train_data,test_data,years,test_year,model_dir,pad_len,epochs=10
         best_test_rmse = 0
 
         # train the model:
-        model = compile_model(pad_len=pad_len,use_dropout=True)
+        model = compile_model(pad_len=pad_len,neigh_mask_dim=train_neigh_mask.shape[-1],use_max_pool=use_max_pool,use_dropout=True)
         for epoch_i in range(epochs):
             train_x,train_neigh_x,train_y,train_mask,train_last_neigh_x,train_last_mask = shuffle(train_x,train_neigh_x,train_y,train_mask,train_last_neigh_x,train_last_mask,random_state=10)
             batch_losses = []
