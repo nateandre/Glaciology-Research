@@ -180,3 +180,63 @@ def standard_model_gp_validation_time(test_year,season,model_dir,pad_len=24,outp
     test_sr = mean_squared_error(test_y,gp_pred)
 
     return math.sqrt(test_sr),float(np.mean(gp_var))
+
+
+def standard_model_attention(season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/"):
+    """ Produces attention distributions based on test-set inputs for standard model
+    """
+    test_year=2015
+    
+    att_mat = np.zeros((25,25))
+    att_mat_p = np.zeros((25,24))
+
+    _,test_data,_ = gather_data(test_year,season,pad_len,data_dir)
+    test_mb,test_features,test_neigh_features,test_last_neigh_features,test_sites,test_neigh_mask,test_last_neigh_mask,_ = test_data
+
+    for test_i in range(0,len(test_sites)):
+        site_i = test_sites[test_i]
+        att_indices = [i for i in range(0,test_i)]+[i for i in range(test_i+1,len(test_sites))]
+
+        test_x = np.expand_dims(test_features[test_i],0)
+        test_neigh_x = np.expand_dims(test_neigh_features[test_i],0)
+        test_last_neigh_x = np.expand_dims(test_last_neigh_features[test_i],0)
+        test_mask = np.expand_dims(test_neigh_mask[test_i],0)
+        test_last_mask = np.expand_dims(test_last_neigh_mask[test_i],0)
+
+        site_model = tf.keras.models.load_model(output_dir+model_dir+"/"+site_i)
+        att_model = Model(inputs=site_model.input,outputs=site_model.layers[22].output)
+        att_model_p = Model(inputs=site_model.input,outputs=site_model.layers[23].output)
+
+        att_dist = np.squeeze(att_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask]))
+        att_dist_p = np.squeeze(att_model_p([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask]))
+
+        for j,a_i in enumerate(att_indices):
+            att_mat[test_i,a_i]=att_dist[j]
+        att_mat_p[test_i] = att_dist_p
+        
+    return att_mat,att_mat_p
+
+
+def time_model_attention(season,model_dir,pad_len=24,output_dir="../model_output/",data_dir="../data/",model_type="time"):
+    """ Produces attention distributions based on test-set inputs for time model
+    """
+    test_year=2015
+    
+    _,test_data,_ = gather_data(test_year,season,pad_len,data_dir,model_type=model_type)
+    test_mb,test_features,test_neigh_features,test_last_neigh_features,test_sites,test_neigh_mask,test_last_neigh_mask,_ = test_data
+    
+    test_x = test_features
+    test_neigh_x = test_neigh_features
+    test_last_neigh_x = test_last_neigh_features
+    test_mask = test_neigh_mask
+    test_last_mask = test_last_neigh_mask
+    test_y = test_mb
+    
+    site_model = tf.keras.models.load_model(output_dir+model_dir)
+    att_model = Model(inputs=site_model.input,outputs=site_model.layers[22].output)
+    att_model_p = Model(inputs=site_model.input,outputs=site_model.layers[23].output)
+    
+    att_mat = np.squeeze(att_model([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask]))
+    att_mat_p = np.squeeze(att_model_p([test_x,test_neigh_x,test_mask,test_last_neigh_x,test_last_mask]))[:,:23]
+    
+    return att_mat,att_mat_p
